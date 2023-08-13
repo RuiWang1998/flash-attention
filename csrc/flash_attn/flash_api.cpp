@@ -17,6 +17,7 @@
 void set_params_fprop(Flash_fwd_params &params,
                       // sizes
                       const size_t b,
+                      const size_t total_q,
                       const size_t seqlen_q,
                       const size_t seqlen_k,
                       const size_t seqlen_q_rounded,
@@ -79,6 +80,7 @@ void set_params_fprop(Flash_fwd_params &params,
     params.h = h;
     params.h_k = h_k;
     params.h_h_k_ratio = h / h_k;
+    params.total_q = total_q,
     params.seqlen_q = seqlen_q;
     params.seqlen_k = seqlen_k;
     params.seqlen_q_rounded = seqlen_q_rounded;
@@ -107,6 +109,7 @@ void set_params_fprop(Flash_fwd_params &params,
 void set_params_dgrad(Flash_bwd_params &params,
                       // sizes
                       const size_t b,
+                      const size_t total_q,
                       const size_t seqlen_q,
                       const size_t seqlen_k,
                       const size_t seqlen_q_rounded,
@@ -136,7 +139,7 @@ void set_params_dgrad(Flash_bwd_params &params,
                       bool is_causal) {
 
     set_params_fprop(params,
-                     b, seqlen_q, seqlen_k, seqlen_q_rounded, seqlen_k_rounded, h, h_k, d, d_rounded,
+                     b, total_q, seqlen_q, seqlen_k, seqlen_q_rounded, seqlen_k_rounded, h, h_k, d, d_rounded,
                      q, k, v, out,
                      cu_seqlens_q_d,
                      cu_seqlens_k_d,
@@ -270,7 +273,8 @@ mha_fwd(const at::Tensor &q,         // batch_size x seqlen_q x num_heads x head
 
     auto opts = q.options();
 
-    auto softmax_lse = torch::empty({batch_size, num_heads, seqlen_q}, opts.dtype(at::kFloat));
+    const int total_q = batch_size * seqlen_q;
+    auto softmax_lse = torch::empty({num_heads, total_q}, opts.dtype(at::kFloat));
     at::Tensor p;
     // Only return softmax if there's dropout to reduce compilation time
     if (return_softmax) {
@@ -281,6 +285,7 @@ mha_fwd(const at::Tensor &q,         // batch_size x seqlen_q x num_heads x head
     Flash_fwd_params params;
     set_params_fprop(params,
                      batch_size,
+                     total_q,
                      seqlen_q, seqlen_k,
                      seqlen_q_rounded, seqlen_k_rounded,
                      num_heads, num_heads_k,
@@ -294,10 +299,10 @@ mha_fwd(const at::Tensor &q,         // batch_size x seqlen_q x num_heads x head
                      softmax_scale,
                      is_causal);
 
-    // number of times random will be generated per thread, to offset philox counter in thc random
-    // state
-    // We use a custom RNG that increases the offset by batch_size * nheads * 32.
-    int64_t counter_offset = params.b * params.h * 32;
+        // number of times random will be generated per thread, to offset philox counter in thc random
+        // state
+        // We use a custom RNG that increases the offset by batch_size * nheads * 32.
+        int64_t counter_offset = params.b * params.h * 32;
     auto options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
     auto rng_state = torch::empty({2}, options.dtype(torch::kInt64));
     // Forward kernel will populate memory with the seed and offset.
@@ -423,7 +428,8 @@ mha_varlen_fwd(const at::Tensor &q,  // total_q x num_heads x head_size, total_q
 
     auto opts = q.options();
 
-    auto softmax_lse = torch::empty({batch_size, num_heads, max_seqlen_q}, opts.dtype(at::kFloat));
+    // auto softmax_lse = torch::empty({batch_size, num_heads, max_seqlen_q}, opts.dtype(at::kFloat));
+    auto softmax_lse = torch::empty({num_heads, total_q}, opts.dtype(at::kFloat));
     at::Tensor p;
     // Only return softmax if there's dropout to reduce compilation time
     if (return_softmax) {
@@ -440,6 +446,7 @@ mha_varlen_fwd(const at::Tensor &q,  // total_q x num_heads x head_size, total_q
     Flash_fwd_params params;
     set_params_fprop(params,
                      batch_size,
+                     total_q,
                      max_seqlen_q, max_seqlen_k,
                      seqlen_q_rounded, seqlen_k_rounded,
                      num_heads, num_heads_k,
@@ -453,10 +460,10 @@ mha_varlen_fwd(const at::Tensor &q,  // total_q x num_heads x head_size, total_q
                      softmax_scale,
                      is_causal);
 
-    // number of times random will be generated per thread, to offset philox counter in thc random
-    // state
-    // We use a custom RNG that increases the offset by batch_size * nheads * 32.
-    int64_t counter_offset = params.b * params.h * 32;
+        // number of times random will be generated per thread, to offset philox counter in thc random
+        // state
+        // We use a custom RNG that increases the offset by batch_size * nheads * 32.
+        int64_t counter_offset = params.b * params.h * 32;
     auto options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
     auto rng_state = torch::empty({2}, options.dtype(torch::kInt64));
     // Forward kernel will populate memory with the seed and offset.
@@ -719,6 +726,8 @@ mha_varlen_bwd(const at::Tensor &dout,  // total_q x num_heads, x head_size
                c10::optional<at::Tensor> &dv_,   // total_k x num_heads_k x head_size, total_k := \sum_{i=0}^{b} s_i
                const at::Tensor &cu_seqlens_q,  // b+1
                const at::Tensor &cu_seqlens_k,  // b+1
+               const int buffer_maximum_batch_size, // the maximum batch size used to create dq_accum and softmax_d
+               const int buffer_maximum_seqlen_q,     // the maximum sequence length used to create dq_accum and softmax_d
                const int max_seqlen_q,
                const int max_seqlen_k,          // max sequence length to choose the kernel
                const float p_dropout,         // probability to drop
@@ -845,11 +854,14 @@ mha_varlen_bwd(const at::Tensor &dout,  // total_q x num_heads, x head_size
     // Cast to char to avoid compiler warning about narrowing
     at::cuda::CUDAGuard device_guard{(char)q.get_device()};
 
+    TORCH_CHECK(buffer_maximum_batch_size >= batch_size, "buffer_maximum_batch_size must be at least batch_size");
+    TORCH_CHECK(buffer_maximum_seqlen_q >= max_seqlen_q, "buffer_maximum_seqlen_q must be at least max_seqlen_q");
+    const int buffer_maximum_seqlen_q_rounded = round_multiple(buffer_maximum_seqlen_q, 128);
     auto opts = q.options();
-    auto softmax_d = torch::empty({batch_size, num_heads, seqlen_q_rounded}, opts.dtype(at::kFloat));
+    auto softmax_d = torch::empty({buffer_maximum_batch_size, num_heads, buffer_maximum_seqlen_q_rounded}, opts.dtype(at::kFloat));
     at::Tensor dq_accum;
     if (loop) {
-        dq_accum = torch::empty({batch_size, num_heads, seqlen_q_rounded, head_size_rounded}, opts.dtype(at::kFloat));
+        dq_accum = torch::empty({buffer_maximum_batch_size, num_heads, buffer_maximum_seqlen_q_rounded, head_size_rounded}, opts.dtype(at::kFloat));
     }
 
     at::Tensor dk_expanded, dv_expanded;
@@ -872,6 +884,7 @@ mha_varlen_bwd(const at::Tensor &dout,  // total_q x num_heads, x head_size
 
     set_params_dgrad(params,
                      batch_size,
+                     total_q,
                      max_seqlen_q, max_seqlen_k,
                      seqlen_q_rounded, seqlen_k_rounded,
                      num_heads, num_heads_k,

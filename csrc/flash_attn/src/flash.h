@@ -66,7 +66,7 @@ struct Flash_fwd_params : public Qkv_params {
     void * __restrict__ softmax_lse_ptr;
 
     // The dimensions.
-    int b, seqlen_q, seqlen_k, d, seqlen_q_rounded, seqlen_k_rounded, d_rounded;
+    int b, seqlen_q, seqlen_k, d, seqlen_q_rounded, seqlen_k_rounded, d_rounded, total_q;
 
     // The scaling factors for the kernel.
     float scale_softmax;
