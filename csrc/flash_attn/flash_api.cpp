@@ -428,7 +428,6 @@ mha_varlen_fwd(const at::Tensor &q,  // total_q x num_heads x head_size, total_q
 
     auto opts = q.options();
 
-    // auto softmax_lse = torch::empty({batch_size, num_heads, max_seqlen_q}, opts.dtype(at::kFloat));
     auto softmax_lse = torch::empty({num_heads, total_q}, opts.dtype(at::kFloat));
     at::Tensor p;
     // Only return softmax if there's dropout to reduce compilation time

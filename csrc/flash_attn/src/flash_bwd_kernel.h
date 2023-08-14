@@ -822,10 +822,10 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
             // Putting this causal masking right after acc_s is *much* slower for some reason.
             if (m_block * kBlockM < (n_block + 1) * kBlockN) {
                 flash::apply_mask_causal(scores, n_block * kBlockN + (tidx / 32 / AtomLayoutMS) * MMA_N_SdP * 16,
-                                        binfo.actual_seqlen_k, m_block * kBlockM + get<0>(taccScS_row(0)),
-                                        // binfo.actual_seqlen_k, m_block * kBlockM + (tidx / 32) % AtomLayoutMS * 16 + (tidx % 32) / 4,
-                                        AtomLayoutMS * 16);
-                }
+                                         binfo.actual_seqlen_k, m_block * kBlockM + get<0>(taccScS_row(0)),
+                                         // binfo.actual_seqlen_k, m_block * kBlockM + (tidx / 32) % AtomLayoutMS * 16 + (tidx % 32) / 4,
+                                         AtomLayoutMS * 16);
+            }
         }
         // if (cute::thread(32, 0)) { print(scores); }
         // Compute the exponential value.
@@ -1143,7 +1143,6 @@ inline __device__ void compute_dq_dk_dv_1rowblock(const Params &params, const in
     // We'll advance gdKaccum and gdVaccum before the first write.
     const index_t row_offset_dkv_accum = ((bidb * params.h_k + (bidh / params.h_h_k_ratio)) * params.seqlen_k_rounded
                                           + n_block_max * kBlockN) * params.d_rounded;
-    // const index_t row_offset_lse = (bidb * params.h + bidh) * params.seqlen_q + m_block * kBlockM;
     const index_t row_offset_lse =  bidh * params.total_q + binfo.sum_s_q + m_block * kBlockM;
 
     // We assume that params.d == kHeadDim for now
