@@ -299,10 +299,10 @@ mha_fwd(const at::Tensor &q,         // batch_size x seqlen_q x num_heads x head
                      softmax_scale,
                      is_causal);
 
-        // number of times random will be generated per thread, to offset philox counter in thc random
-        // state
-        // We use a custom RNG that increases the offset by batch_size * nheads * 32.
-        int64_t counter_offset = params.b * params.h * 32;
+    // number of times random will be generated per thread, to offset philox counter in thc random
+    // state
+    // We use a custom RNG that increases the offset by batch_size * nheads * 32.
+    int64_t counter_offset = params.b * params.h * 32;
     auto options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
     auto rng_state = torch::empty({2}, options.dtype(torch::kInt64));
     // Forward kernel will populate memory with the seed and offset.
@@ -460,10 +460,10 @@ mha_varlen_fwd(const at::Tensor &q,  // total_q x num_heads x head_size, total_q
                      softmax_scale,
                      is_causal);
 
-        // number of times random will be generated per thread, to offset philox counter in thc random
-        // state
-        // We use a custom RNG that increases the offset by batch_size * nheads * 32.
-        int64_t counter_offset = params.b * params.h * 32;
+    // number of times random will be generated per thread, to offset philox counter in thc random
+    // state
+    // We use a custom RNG that increases the offset by batch_size * nheads * 32.
+    int64_t counter_offset = params.b * params.h * 32;
     auto options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
     auto rng_state = torch::empty({2}, options.dtype(torch::kInt64));
     // Forward kernel will populate memory with the seed and offset.

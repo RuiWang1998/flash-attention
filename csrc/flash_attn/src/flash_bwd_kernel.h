@@ -819,13 +819,13 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
                                   n_block * kBlockN + (tidx / 32 / AtomLayoutMS) * MMA_N_SdP * 16);
             }
         } else {
-        // Putting this causal masking right after acc_s is *much* slower for some reason.
+            // Putting this causal masking right after acc_s is *much* slower for some reason.
             if (m_block * kBlockM < (n_block + 1) * kBlockN) {
-            flash::apply_mask_causal(scores, n_block * kBlockN + (tidx / 32 / AtomLayoutMS) * MMA_N_SdP * 16,
-                                     binfo.actual_seqlen_k, m_block * kBlockM + get<0>(taccScS_row(0)),
-                                     // binfo.actual_seqlen_k, m_block * kBlockM + (tidx / 32) % AtomLayoutMS * 16 + (tidx % 32) / 4,
-                                     AtomLayoutMS * 16);
-            }
+                flash::apply_mask_causal(scores, n_block * kBlockN + (tidx / 32 / AtomLayoutMS) * MMA_N_SdP * 16,
+                                        binfo.actual_seqlen_k, m_block * kBlockM + get<0>(taccScS_row(0)),
+                                        // binfo.actual_seqlen_k, m_block * kBlockM + (tidx / 32) % AtomLayoutMS * 16 + (tidx % 32) / 4,
+                                        AtomLayoutMS * 16);
+                }
         }
         // if (cute::thread(32, 0)) { print(scores); }
         // Compute the exponential value.
