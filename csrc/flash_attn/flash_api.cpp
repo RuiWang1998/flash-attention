@@ -657,8 +657,10 @@ mha_bwd(const at::Tensor &dout,  // batch_size x seqlen_q x num_heads, x head_si
 
     Flash_bwd_params params;
 
+    const int total_q = batch_size * seqlen_q;
     set_params_dgrad(params,
                      batch_size,
+                     total_q,
                      seqlen_q, seqlen_k,
                      seqlen_q_rounded, seqlen_k_rounded,
                      num_heads, num_heads_k,
@@ -886,7 +888,9 @@ mha_varlen_bwd(const at::Tensor &dout,  // total_q x num_heads, x head_size
                      batch_size,
                      total_q,
                      max_seqlen_q, max_seqlen_k,
-                     seqlen_q_rounded, seqlen_k_rounded,
+                    //  seqlen_q_rounded, 
+                     buffer_maximum_seqlen_q_rounded,
+                     seqlen_k_rounded,
                      num_heads, num_heads_k,
                      head_size, head_size_rounded,
                      q, k, v, out,
